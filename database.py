@@ -1,3 +1,4 @@
+# database.py
 from utility.logger import logger
 from typing import Dict, Any
 import datetime
@@ -15,7 +16,7 @@ class Database(object):
         self.__user = user
         self.__password = password
         self.__host = host
-        self.__datbase_name = database_name
+        self.__database_name = database_name
         self.__database_in_use = False
 
     @property
