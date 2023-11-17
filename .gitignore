@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 config.py
+agcenter/
 
 # C extensions
 *.so
