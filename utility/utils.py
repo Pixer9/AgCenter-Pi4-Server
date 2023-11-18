@@ -54,13 +54,15 @@ class Controller(object):
                  store_locally: bool=False,
                  store_drive: bool=True,
                  database=None,
-                 writer=None ) -> None:
+                 drive_writer=None,
+                 local_writer = None ) -> None:
         self.__sensor_list = sensor_list
         self.__i2c_bus = i2c_bus
         self.__store_locally = store_locally
         self.__store_drive = store_drive
         self.__database = database
-        self.__GSWriter = writer
+        self.__GSWriter = drive_writer
+        self.__XLSXWriter = local_writer
         self.__object_map = self._create_object_map()
         self.__current_objects = self._create_objects()
 
@@ -147,9 +149,9 @@ class Controller(object):
             Optional method for storing data locally
                 *args -> dict sensor data
         """
-        if self.__store_locally:
-            pass
-        if self.__store_drive:
+        if self.__store_locally and self.__XLSXWriter:
+            await self.__XLSXWriter.write_sensor_data(data)
+        if self.__store_drive and self.__GSWriter:
             await self.__GSWriter.write_sensor_data(data)
 
     async def _write_to_database(self, data: dict) -> None:

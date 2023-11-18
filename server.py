@@ -20,13 +20,15 @@ class Server(object):
                  host: str="10.42.0.1",
                  port: int=65432,
                  database=None,
-                 writer=None,
+                 drive_writer=None,
+                 xlsx_writer=None,
                  store_local: bool=True,
                  store_drive: bool=True) -> None:
         self.__host = host
         self.__port = port
         self.__database = database
-        self._GSWriter = writer
+        self.__GSWriter = drive_writer
+        self.__XLSXWriter = xlsx_writer
         self._store_local = store_local
         self._store_drive = store_drive
 
@@ -39,12 +41,11 @@ class Server(object):
                 for key in data.keys():
                     await self.__database.write(key, data[key])
 
-            if data and self._store_local:
-                # implement XLSWriter from xlsx_writer.py once complete
-                pass
+            if data and self._store_local and self.__XLSXWriter:
+                await self.__XLSXWriter.write_sensor_data(data)
 
-            if data and self._store_drive and self._GSWriter:
-                await self._GSWriter.writer_sensor_data(data)
+            if data and self._store_drive and self.__GSWriter:
+                await self.__GSWriter.writer_sensor_data(data)
 
         except Exception as e:
             logger.error(f"Error handling client data: {e}")
