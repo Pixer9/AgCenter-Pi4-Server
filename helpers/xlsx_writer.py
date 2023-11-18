@@ -9,7 +9,7 @@ class XLSXWriter(object):
     def __init__(self, file_name: str=LOCAL_XLSX ) -> None:
         self.__file_name = file_name
 
-    def write(self, data: dict) -> None:
+    async def write_sensor_data(self, data: dict) -> None:
         """
             Method for writing data to local XLSX file
         """
