@@ -61,7 +61,7 @@ class Controller(object):
         self.__store_drive = store_drive
         self.__database = database
         self.__GSWriter = writer
-        self__object_map = self._create_object_map()
+        self.__object_map = self._create_object_map()
         self.__current_objects = self._create_objects()
 
     def _create_object_map(self) -> dict:
@@ -150,7 +150,7 @@ class Controller(object):
         if self.__store_locally:
             pass
         if self.__store_drive:
-            await self.__GSwriter.write_sensor_data(data)
+            await self.__GSWriter.write_sensor_data(data)
 
     async def _write_to_database(self, data: dict) -> None:
         """
@@ -158,13 +158,8 @@ class Controller(object):
                 *args -> dict sensor data
         """
         if self.__database:
-            while self.__databse.database_in_use:
-                await asyncio.sleep(1.0)
-            self.__database.database_in_use = True
-
             for key in data.keys():
-                await self.__datbase.write(key, data[key])
-            self.__database.database_in_use = False
+                await self.__database.write(key, data[key])
         else:
             logger.warning(f"No database was established. Current database is {self.__database}")
 
