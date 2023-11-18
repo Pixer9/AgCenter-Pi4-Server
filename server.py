@@ -25,7 +25,7 @@ class Server(object):
                  store_drive: bool=True) -> None:
         self.__host = host
         self.__port = port
-        self._db = database
+        self.__database = database
         self._GSWriter = writer
         self._store_local = store_local
         self._store_drive = store_drive
@@ -35,13 +35,9 @@ class Server(object):
             Method for handling client connections asynchronously:
         """
         try:
-            if data and self._db:
-                while self._db.database_in_use:
-                    await asyncio.sleep(0.1)
-                self._db.database_in_use = True
+            if data and self.__database:
                 for key in data.keys():
-                    await self._db.write(key, data[key])
-                self._db.database_in_use = False
+                    await self.__database.write(key, data[key])
 
             if data and self._store_local:
                 # implement XLSWriter from xlsx_writer.py once complete
