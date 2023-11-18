@@ -1,4 +1,5 @@
 # server.py
+import utility.config as config
 from utility.logger import logger
 from typing import Dict, Any
 import asyncio
@@ -17,18 +18,20 @@ class Server(object):
     MAX_TCP_QUEUE = 10 # amount of connections to queue before refusing
 
     def __init__(self,
-                 host: str="10.42.0.1",
-                 port: int=65432,
+                 host: str=config.DEFAULT_SERVER_IP,
+                 port: int=config.DEFAULT_SERVER_PORT,
                  database=None,
                  drive_writer=None,
-                 xlsx_writer=None,
-                 store_local: bool=True,
-                 store_drive: bool=True) -> None:
+                 local_writer=None,
+                 store_database: bool=config.STORE_DATABASE,
+                 store_local: bool=config.STORE_LOCAL,
+                 store_drive: bool=config.STORE_DRIVE) -> None:
         self.__host = host
         self.__port = port
         self.__database = database
         self.__GSWriter = drive_writer
-        self.__XLSXWriter = xlsx_writer
+        self.__XLSXWriter = local_writer
+        self._store_database = store_database
         self._store_local = store_local
         self._store_drive = store_drive
 
@@ -37,7 +40,7 @@ class Server(object):
             Method for handling client connections asynchronously:
         """
         try:
-            if data and self.__database:
+            if data and self._store_database and self.__database:
                 for key in data.keys():
                     await self.__database.write(key, data[key])
 
@@ -68,7 +71,7 @@ class Server(object):
             Method for handling client connections with asyncio.start_server
         """
         try:
-            data = await asyncio.wait_for(reader.read(4096), timeout=Server.SERVER_TIMEOUT)
+            data = await asyncio.wait_for(reader.read(config.PACKET_SIZE), timeout=Server.SERVER_TIMEOUT)
             data_str = data.decode()
             logger.info(f"Data received from {writer.get_extra_info('peername')}")
 

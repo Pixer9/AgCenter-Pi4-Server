@@ -1,12 +1,11 @@
 # xlsx_writer.py
 from openpyxl import load_workbook, Workbook
+import utility.config as config
 from utility.logger import logger
 import os
 
-LOCAL_XLSX = "AgCenter-Data.xlsx"
-
 class XLSXWriter(object):
-    def __init__(self, file_name: str=LOCAL_XLSX ) -> None:
+    def __init__(self, file_name: str=config.LOCAL_FILE_NAME ) -> None:
         self.__file_name = file_name
 
     async def write_sensor_data(self, data: dict) -> None:

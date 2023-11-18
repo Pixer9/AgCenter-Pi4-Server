@@ -1,4 +1,5 @@
 # database.py
+import utility.config as config
 from utility.logger import logger
 from typing import Dict, Any
 import datetime
@@ -10,30 +11,15 @@ import asyncio
 class Database(object):
     def __init__(
             self,
-            user: str="admin",
-            password: str="T@rleton123",
-            host: str="localhost",
-            database_name: str="AgCenter" ) -> None:
+            user: str=config.DATABASE_USER,
+            password: str=config.DATABASE_PASSWORD,
+            host: str=config.DATABASE_HOST,
+            database_name: str=config.DATABASE_NAME ) -> None:
         self.__user = user
         self.__password = password
         self.__host = host
         self.__database_name = database_name
-        #self.__database_in_use = False
         self.__database_lock = asyncio.Lock()
-
-    @property
-    def database_in_use(self) -> bool:
-        """
-            To determine if database is currently being used by an object
-        """
-        return self.__database_in_use
-    
-    @database_in_use.setter
-    def database_in_use(self, value: bool) -> None:
-        """
-            For setting flag notifying other objects that database is in use
-        """
-        self.__database_in_use = value
 
     async def write(self, sensor: str, readings: Dict[str, Any]) -> None:
         """

@@ -6,6 +6,7 @@ from googleapiclient.errors import HttpError
 
 from typing import Dict, Any, Optional
 from utility.logger import logger
+import utility.config as config
 import os.path
 
 """
@@ -17,18 +18,13 @@ import os.path
 
 # TODO - In write_sensor_data, need to account for RGB list when writing to Google - [45, 135, 60]
 
-CREDENTIALS_FILE = "./helpers/credentials.json" # for authenticating and generating token
-SPREADSHEET_ID = "1Ffsrae8gBJSGfGUf9ubA3sehmHv77zW0ysqKY-EYkeQ" # unique ID for accessing specific spreadsheet
-
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-
 class GSWriter(object):
     """
         GSWriter handles all Google API calls for writing to a Google Spreadsheet
             spreadsheet_id --> unique ID of sheet found in URL:
                 https://docs.google.com/speradsheets/d/{SPREADSHEET_ID}/edit#grid=920914920
     """
-    def __init__( self, spreadsheet_id: str=SPREADSHEET_ID ) -> None:
+    def __init__( self, spreadsheet_id: str=config.SPREADSHEET_ID ) -> None:
         self.__credentials = self._generate_token()
         self.__service = build("sheets", "v4", credentials=self.__credentials)
         self.__spreadsheet_id = spreadsheet_id
@@ -41,14 +37,14 @@ class GSWriter(object):
         """
         creds = None
         if os.path.exists("./helpers/token.json"):
-            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+            creds = Credentials.from_authorized_user_file("token.json", config.SCOPES)
 
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(
-                    CREDENTIALS_FILE, SCOPES
+                    config.CREDENTIALS_FILE, config.SCOPES
                 )
 
         # Store fresh token locally
@@ -93,6 +89,7 @@ class GSWriter(object):
                     body={'values': header_values},
                     valueInputOption='RAW'
                 ).execute()
+
         except HttpError as http_error:
             logger.error(f"Error occurred while trying to create/modify sheet: {http_error}")
         except RuntimeError as runtime_error:
@@ -115,7 +112,7 @@ class GSWriter(object):
 
             if sensor_name not in self.__sheets_created:
                 await self._create_or_clear_sheet( sensor_name, headers )
-                self.__sheets_create.append(sensor_name)
+                self.__sheet_created.append(sensor_name)
 
             range_to_append = (f"{sheet_name}!A1:{chr(65+len(headers)-1)}")
 
@@ -133,14 +130,3 @@ class GSWriter(object):
                 logger.error(f"Error occurred while trying to write to sheet: {http_error}")
             except RuntimeError as runtime_error:
                 logger.error(f"Runtime Error: {runtime_error} while writing to sheet {self.__spreadsheet_id}")
-
-# Remove after thorough testing
-if __name__ == "__main__":
-    test_sensor_data = {
-        "TDS_Meter": {'Node': 183, 'DT': '11-12-2023@17:00:36', 'raw_value': 13, 'raw_voltage': 0.2356236, 'PPM': 0},
-        "Turbidity_Meter": {'Node': 183, 'DT': '11-12-2023@17:00:36', 'raw_value': 24981, 'raw_voltage': 3.1351365}
-    }
-
-    spreadsheet_id = SPREADSHEET_ID
-    spreadsheet_writer = GSWriter(spreadsheet_id)
-    spreadsheet_writer.write_sensor_data(test_sensor_data)

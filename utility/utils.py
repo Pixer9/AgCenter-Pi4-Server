@@ -1,6 +1,7 @@
 # utils.py
 from adafruit_ads1x15.analog_in import AnalogIn
 import adafruit_ads1x15.ads1115 as ADS
+import utility.config as config
 #from libcamera import Transform
 from typing import Optional
 from .logger import logger
@@ -13,32 +14,6 @@ import time
 import sys
 import os
 
-NODE = 0xB5
-
-# TCP Timeout
-CLIENT_TIMEOUT = 10 # in seconds
-
-# Debug output file path (for checking data without transmitting)
-LOG_DATA_LOCAL = False
-OUTPUT_PATH = "/home/tarleton/Desktop/SmartCrop/"
-
-# Where to store images locally
-IMAGE_STORE_PATH = "/home/kyle/Desktop/SmartCrop/Images/"
-
-# SSH secure copy globals
-SCP_COPY = False
-PRIVATE_KEY_FILE_PATH = ""
-USERNAME = "admin"
-IP_ADDR = "10.42.0.1"
-DESTINATION_COP_PATH = "/home/admin/Desktop/SmartCrop/Images/"
-
-# ADC Address (used by all attached analog sensors)
-ADC_ADDR = 0x48
-
-# Analog Channels
-TDS_CHAN = ADS.P1
-TURBIDITY_CHAN = ADS.P2
-PH_CHAN = ADS.P3
 
 class Controller(object):
     """
@@ -51,8 +26,8 @@ class Controller(object):
     def __init__(self,
                  sensor_list: list,
                  i2c_bus: I2C,
-                 store_locally: bool=False,
-                 store_drive: bool=True,
+                 store_locally: bool=config.STORE_LOCAL,
+                 store_drive: bool=config.STORE_DRIVE,
                  database=None,
                  drive_writer=None,
                  local_writer = None ) -> None:
@@ -111,7 +86,7 @@ class Controller(object):
                 data = None
                 if isinstance(sensor, Camera):
                     image_path = await sensor.capture_image()
-                    if image_path is not None and SCP_COPY:
+                    if image_path is not None and config.SCP_COPY:
                         await self._ssh_copy_to_hub(image_path)
                 else:
                     data = await sensor.package(current_time)
@@ -136,7 +111,7 @@ class Controller(object):
         logger.info("Copying image to hub...")
         
         if os.path.exists(image_path):
-            copy_command = f"scp {image_path} {USERNAME}@{IP_ADDR}:{DESTINATION_COP_PATH}"
+            copy_command = f"scp {image_path} {config.USERNAME}@{config.IP_ADDR}:{config.DESTINATION_COPY_PATH}"
             os.system(copy_command)
 
             # Remove image from local directory if not wanting to store locally (saves storage space)
@@ -186,13 +161,11 @@ class Camera(picamera2.Picamera2):
     picamera2.Picamera2.set_logging(picamera2.Picamera2.ERROR)
 
     def __init__(self,
-                 dimensions: tuple=(1920,1080),
-                 store_local: bool=True,
-                 file_format: str="png",
-                 use_timestamp: bool=True ) -> None:
+                 dimensions: tuple=config.IMAGE_DIMENSIONS,
+                 file_format: str=config.IMAGE_FORMAT,
+                 use_timestamp: bool=config.USE_TIMESTAMP_AS_NAME ) -> None:
         super().__init__()
         self.__dimensions = dimensions
-        self.__store_local = store_local
         self.__file_format = file_format
         self.__use_timestamp = use_timestamp
 
@@ -221,7 +194,7 @@ class Camera(picamera2.Picamera2):
 
             asyncio.sleep(2.0)
             
-            full_image_path = IMAGE_STORE_PATH+self._image_name+f".{self.__file_format}"
+            full_image_path = config.IMAGE_STORE_PATH+self._image_name+f".{self.__file_format}"
             self.capture_file(
                 file_output=full_image_path,
                 name="main",
@@ -252,7 +225,7 @@ class ADC_Analog(object):
         TDS Measurement Range: 0 ~ 1000ppm
 """
 class TDS_Meter(ADC_Analog):
-    def __init__( self, i2c_bus: I2C, address: int=ADC_ADDR, channel=TDS_CHAN ) -> None:
+    def __init__( self, i2c_bus: I2C, address: int=config.ADC_ADDR, channel=config.TDS_CHAN ) -> None:
         super().__int__( i2c_bus, address, channel )
         self.__max_voltage = 2.3
         self.__max_ppm = 1000
@@ -271,7 +244,7 @@ class TDS_Meter(ADC_Analog):
         """
         try:
             self.__TDS_Dict = {
-                "Node": NODE,
+                "Node": config.NODE,
                 "DT": None,
                 "raw_value": None,
                 "raw_voltage": None,
@@ -310,7 +283,7 @@ class TDS_Meter(ADC_Analog):
         as the light is scattered by the increased solids.
 """
 class Turbidity_Meter(ADC_Analog):
-    def __init__( self, i2c_bus: I2C, address: int=ADC_ADDR, channel=TURBIDITY_CHAN ) -> None:
+    def __init__( self, i2c_bus: I2C, address: int=config.ADC_ADDR, channel=config.TURBIDITY_CHAN ) -> None:
         super().__init__( i2c_bus, address, channel )
         self.__min = None
         self.__max = None
@@ -322,7 +295,7 @@ class Turbidity_Meter(ADC_Analog):
         """
         try:
             self.__TB_dict = {
-                "Node": NODE,
+                "Node": config.NODE,
                 "DT": None,
                 "raw_value": None,
                 "raw_voltage": None
@@ -360,7 +333,7 @@ class Turbidity_Meter(ADC_Analog):
                 10              2.066
 """
 class PH_Meter(ADC_Analog):
-    def __init__( self, i2c_bus: I2C, address: int=ADC_ADDR, channel=PH_CHAN ) -> None:
+    def __init__( self, i2c_bus: I2C, address: int=config.ADC_ADDR, channel=config.PH_CHAN ) -> None:
         super().__init__( i2c_bus, address, channel )
         self.__min = None
         self.__max = None
@@ -372,7 +345,7 @@ class PH_Meter(ADC_Analog):
         """
         try:
             self.__PH_dict = {
-                "Node": NODE,
+                "Node": config.NODE,
                 "DT": None,
                 "raw_value": None,
                 "raw_voltage": None
