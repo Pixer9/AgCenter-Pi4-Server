@@ -3,7 +3,7 @@ from adafruit_ads1x15.analog_in import AnalogIn
 import adafruit_ads1x15.ads1115 as ADS
 import utility.config as config
 #from libcamera import Transform
-from typing import Optional
+from typing import Optional, Dict, Any
 from .logger import logger
 from busio import I2C
 import picamera2
@@ -26,7 +26,8 @@ class Controller(object):
     def __init__(self,
                  sensor_list: list,
                  i2c_bus: I2C,
-                 store_locally: bool=config.STORE_LOCAL,
+                 store_locally: bool=config.STORE_LOCAL_FILE,
+                 store_database: bool=config.STORE_LOCAL_DATABASE,
                  store_drive: bool=config.STORE_DRIVE,
                  database=None,
                  drive_writer=None,
@@ -34,6 +35,7 @@ class Controller(object):
         self.__sensor_list = sensor_list
         self.__i2c_bus = i2c_bus
         self.__store_locally = store_locally
+        self.__store_database = store_database
         self.__store_drive = store_drive
         self.__database = database
         self.__GSWriter = drive_writer
@@ -47,9 +49,11 @@ class Controller(object):
         """
         logger.info("Mapping existing classes...")
         object_map = {}
+
         for name, obj in inspect.getmemebers(sys.modules[__name__]):
             if inspect.isclass(obj):
                 object_map[name] = obj
+
         logger.info("Mapping complete.")
         return object_map
     
@@ -59,6 +63,7 @@ class Controller(object):
         """
         logger.info("Generating Objects...")
         objects = []
+
         for name in self.__sensor_list:
             if name in self.__object_map:
                 try:
@@ -68,8 +73,12 @@ class Controller(object):
                     else:
                         obj = object_class(self.__i2c_bus)
                     objects.append(obj)
+
                 except RuntimeError as runtime_error:
-                    logger.error(f"Error: {runtime_error} when creating object {name}.")
+                    logger.exception(f"Runtime Error: {runtime_error} when creating object {name}.")
+                except Exception as e:
+                    logger.exception(f"Error occurred while creating object {name}: {e}")
+
         logger.info("Generation complete.")
         return objects
     
@@ -92,11 +101,12 @@ class Controller(object):
                     data = await sensor.package(current_time)
                 if data is not None:
                     sensor_data.update(data)
-                asyncio.sleep(1.0)
+                    await asyncio.sleep(1.0)
             logger.info("Collection complete.")
 
-            await self._write_to_database(sensor_data)
-            await self._write_to_file(sensor_data)
+            if sensor_data:
+                await self._write_to_database(sensor_data)
+                await self._write_to_file(data=sensor_data, timestamp=current_time)
 
             next_reading = await self._calc_next_reading()
             logger.info(f"Next reading in {next_reading} seconds.")
@@ -119,7 +129,7 @@ class Controller(object):
                 del_command = f"rm {image_path}"
                 os.system(del_command)
 
-    async def _write_to_file(self, data: dict) -> None:
+    async def _write_to_file(self, data: Dict[str, Any], timestamp: str) -> None:
         """
             Optional method for storing data locally
                 *args -> dict sensor data
@@ -127,7 +137,7 @@ class Controller(object):
         if self.__store_locally and self.__XLSXWriter:
             await self.__XLSXWriter.write_sensor_data(data)
         if self.__store_drive and self.__GSWriter:
-            await self.__GSWriter.write_sensor_data(data)
+            await self.__GSWriter.write_sensor_data(sensor_dict=data, timestamp_recv=timestamp)
 
     async def _write_to_database(self, data: dict) -> None:
         """
