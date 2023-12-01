@@ -1,13 +1,12 @@
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from typing import Dict, Any, Optional
+from collections import OrderedDict
+from typing import Dict, Any
 from utility.logger import logger
 import utility.config as config
-import os.path
+import datetime
 
 """
     PRIORITY:
@@ -25,31 +24,22 @@ class GSWriter(object):
                 https://docs.google.com/speradsheets/d/{SPREADSHEET_ID}/edit#grid=920914920
     """
     def __init__( self, spreadsheet_id: str=config.SPREADSHEET_ID ) -> None:
-        self.__credentials = self._generate_token()
+        self.__credentials = self._authenticate()
         self.__service = build("sheets", "v4", credentials=self.__credentials)
         self.__spreadsheet_id = spreadsheet_id
         self.__sheet_created = []
+        self.__column_mappings = {}
 
-    def _generate_token(self):
+    def _authenticate(self):
         """
-            Check if credentials have been verified and token has been generated. If not,
-            create a token and store it locally.
+            Verify credentials and establish permissions with API
         """
         creds = None
-        if os.path.exists("./helpers/token.json"):
-            creds = Credentials.from_authorized_user_file("token.json", config.SCOPES)
-
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    config.CREDENTIALS_FILE, config.SCOPES
-                )
-
-        # Store fresh token locally
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+        
+        creds = service_account.Credentials.from_service_account_file(
+            config.CREDENTIALS_FILE,
+            scopes=config.SCOPES
+        )
 
         return creds
     
@@ -65,7 +55,10 @@ class GSWriter(object):
 
             sheet_exists = any(sheet['properties']['title'] == sheet_name for sheet in sheet_properties)
 
-            if not sheet_exists:
+            if sheet_exists:
+                logger.info(f"{sheet_name} exists... fetching column headers...")
+                await self._fetch_headers_from_spreadsheet(sheet_name=sheet_name)
+            else:
                 logger.warning(f"{sheet_name} does not exist. Creating it...")
                 body = {
                     'requests': [{
@@ -90,38 +83,51 @@ class GSWriter(object):
                     valueInputOption='RAW'
                 ).execute()
 
+                self.__column_mappings[sheet_name] = headers
+
         except HttpError as http_error:
             logger.error(f"Error occurred while trying to create/modify sheet: {http_error}")
         except RuntimeError as runtime_error:
             logger.error(f"Error: {runtime_error} while working with Google Sheets.")
 
-    async def write_sensor_data(self, sensor_data: Dict[str, Any]) -> None:
+    async def write_sensor_data(self, sensor_dict: Dict[str, Any], timestamp_recv: str) -> None:
         """
             Method for processing data and writing it to specified Google Sheet
-                *args -> dict sensor data
+                *args -> dict sensor data, str datetime
         """
-        for sensor_name, sensor_data in sensor_data.items():
+        # DT MUST be string as it is packaged as json for transmission to Google API
+        for sensor in sensor_dict.keys():
+            if 'DT' not in sensor_dict[sensor].keys():
+                sensor_dict[sensor]['DT'] = timestamp_recv
+            elif isinstance(sensor_dict[sensor]['DT'], datetime.datetime):
+                sensor_dict[sensor]['DT'] = sensor_dict[sensor]['DT'].strftime("%m-%d-%Y@%H:%M:%S")
+            else:
+                sensor_dict[sensor]['DT'] = timestamp_recv
+
+        for sensor_name, sensor_data in sensor_dict.items():
             sheet_name = sensor_name
 
             # Need to account for RGB values
             if sensor_name == "RGB_TCS34725":
-                del sensor_data["color_rgb_bytes"]
+                if "color_rgb_bytes" in sensor_data.keys():
+                    del sensor_data["color_rgb_bytes"]
             
-            values = list(sensor_data.values())
-            headers = list(sensor_data.keys())
+            # Sort data to match columns headers of sheet
+            ordered_dict = await self._order_values_by_sheet(sheet_name, sensor_data)
+            _values = list(ordered_dict.values())
 
             if sensor_name not in self.__sheets_created:
-                await self._create_or_clear_sheet( sensor_name, headers )
+                await self._create_or_clear_sheet( sensor_name, list(sensor_data.keys()) )
                 self.__sheet_created.append(sensor_name)
 
-            range_to_append = (f"{sheet_name}!A1:{chr(65+len(headers)-1)}")
+            range_to_append = (f"{sheet_name}!A1:{chr(65+len(list(ordered_dict.keys()))-1)}")
 
             try:
                 logger.info("Writing to Google Spreadsheet...")
                 self.__service.spreadsheets().values().append(
                     spreadsheetId=self.__spreadsheet_id,
                     range=range_to_append,
-                    body={'values': [values]},
+                    body={'values': [_values]},
                     valueInputoption='RAW'
                 ).execute()
 
@@ -130,3 +136,38 @@ class GSWriter(object):
                 logger.error(f"Error occurred while trying to write to sheet: {http_error}")
             except RuntimeError as runtime_error:
                 logger.error(f"Runtime Error: {runtime_error} while writing to sheet {self.__spreadsheet_id}")
+
+    async def _order_values_by_sheet(self, sheet_name: str, sensor_dict: Dict[str, Any]) -> dict:
+        """
+            Order the dictionary keys/values by the order of the sheet column names
+        """
+        if sheet_name not in self.__column_mappings:
+            return sensor_dict
+        
+        key_order = self.__column_mappings[sheet_name]
+        ordered_dict = dict(OrderedDict((key, sensor_dict[key]) for key in key_order if key in sensor_dict))
+
+        return ordered_dict
+    
+    async def _fetch_headers_from_spreadsheet(self, sheet_name: str) -> None:
+        """
+            Method for getting spreadsheet headers from Google Sheet
+                *args -> str sheet name (should match sensor name)
+        """
+        _range = f"{sheet_name}!1:1"
+
+        try:
+            response = self.__service.spreadsheets().values().get(
+                spreadsheetId=self.__spreadsheet_id,
+                range=_range,
+                majorDimension='ROWs'
+            ).execute()
+
+            headers = response.get('values', [])[0] if 'values' in response else []
+
+            self.__column_mappings[sheet_name] = list(headers)
+
+        except HttpError as http_error:
+            logger.exception(f"HTTP request error occurred while fetching headers: {http_error}")
+        except Exception as e:
+            logger.exception(f"Error occurred while fetching headers: {e}")
