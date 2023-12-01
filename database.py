@@ -6,7 +6,6 @@ import datetime
 import mariadb
 import asyncio
 
-# TODO - Implement asyncio lock to prevent race conditions on database
 
 class Database(object):
     def __init__(
@@ -37,19 +36,27 @@ class Database(object):
             )
 
             try:
+                # Need to account for RGB list in future
+                if sensor == "RGB_TCS34725":
+                    del readings["color_rgb_bytes"]
+
                 self.cur = self.conn.cursor()
                 logger.info(f"Writing {sensor} data to database...")
+
                 dt = datetime.datetime.now()
                 await self.insert(sensor, readings, dt)
+
                 self.conn.commit()
                 self.cur.close()
             except mariadb.Error as mariadb_error:
                 logger.error(f"Error when trying to write {sensor} data to database: {mariadb_error}")
+            except Exception as e:
+                logger.exception(f"Error while writing to database: {e}")
             finally:
                 logger.info("MariaDb connection closed.")
                 self.conn.close()
 
-    async def insert(self, sensor: str, readings: Dict[str, Any], dt: datetime.datetime):
+    async def insert(self, sensor: str, readings: Dict[str, Any], dt: datetime.datetime) -> None:
         """
             Method to dynaically generate an SQL query for the passed sensor
                 *args -> str sensor name, dict data readings, datetime date time
