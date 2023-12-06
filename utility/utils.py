@@ -2,15 +2,14 @@
 from adafruit_ads1x15.analog_in import AnalogIn
 import adafruit_ads1x15.ads1115 as ADS
 import utility.config as config
-#from libcamera import Transform
-from typing import Optional, Dict, Any
+from libcamera import Transform
+from typing import Union, Dict, Any
 from .logger import logger
 from busio import I2C
 import picamera2
 import datetime
 import inspect
 import asyncio
-import time
 import sys
 import os
 
@@ -91,6 +90,7 @@ class Controller(object):
             sensor_data = {}
             logger.info("Collecting data...")
 
+            image_path = None
             for sensor in self.__current_objects:
                 data = None
                 if isinstance(sensor, Camera):
@@ -106,7 +106,7 @@ class Controller(object):
 
             if sensor_data:
                 await self._write_to_database(sensor_data)
-                await self._write_to_file(data=sensor_data, timestamp=current_time)
+                await self._write_to_file(data=sensor_data, timestamp=current_time, image_path=image_path)
 
             next_reading = await self._calc_next_reading()
             logger.info(f"Next reading in {next_reading} seconds.")
@@ -129,7 +129,7 @@ class Controller(object):
                 del_command = f"rm {image_path}"
                 os.system(del_command)
 
-    async def _write_to_file(self, data: Dict[str, Any], timestamp: str) -> None:
+    async def _write_to_file(self, data: Dict[str, Any], timestamp: str, image_path: str=None) -> None:
         """
             Optional method for storing data locally
                 *args -> dict sensor data
@@ -138,6 +138,8 @@ class Controller(object):
             await self.__XLSXWriter.write_sensor_data(data)
         if self.__store_drive and self.__GSWriter:
             await self.__GSWriter.write_sensor_data(sensor_dict=data, timestamp_recv=timestamp)
+            if image_path:
+                await self.__GSWriter.upload_to_google_drive(abs_image_path=image_path)
 
     async def _write_to_database(self, data: dict) -> None:
         """
@@ -185,26 +187,31 @@ class Camera(picamera2.Picamera2):
             Property method for generating image names
         """
         if self.__use_timestamp:
-            return datetime.datetime.now().strftime("%m-%d-%Y@%H:%M:%S")
-        return "test1"
+            current_time = datetime.datetime.now().strftime("%m-%d-%Y@%H:%M:%S")
+            image_name = f"{config.IMAGE_STORE_PATH}Node~{config.NODE}|DT~{current_time}.{self.__file_format}"
+        
+        else:
+            image_name = f"{config.IMAGE_STORE_PATH}Node~{config.NODE}~test1.{self.__file_format}"
+
+        return image_name
     
-    async def capture_image(self) -> Optional(str, None):
+    async def capture_image(self) -> Union[str, None]:
         """
             Method for capturing image and returning absolute path to that image
         """
         try:
-            config = self.create_still_configuration(
+            _config = self.create_still_configuration(
                 main={"size": self.__dimensions},
-                #transform=Transform(vflip=1, hflip=1),
+                transform=Transform(vflip=1, hflip=1),
                 raw=self.sensor_modes[3]
             )
 
-            self.configure(config)
+            self.configure(_config)
             self.start(show_preview=False)
 
             asyncio.sleep(2.0)
             
-            full_image_path = config.IMAGE_STORE_PATH+self._image_name+f".{self.__file_format}"
+            full_image_path = self._image_name
             self.capture_file(
                 file_output=full_image_path,
                 name="main",
@@ -215,8 +222,9 @@ class Camera(picamera2.Picamera2):
             self.stop()
             return full_image_path
         except RuntimeError as runtime_error:
-            logger.error(f"Error: {runtime_error} while trying to capture image.")
-            return None
+            logger.error(f"Runtime Error: {runtime_error} when trying to capture image.")
+        except Exception as e:
+            logger.exception(f"Error while trying to capture image: {e}")
         
 class ADC_Analog(object):
     """
